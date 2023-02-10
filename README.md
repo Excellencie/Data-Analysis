@@ -1,2 +1,2 @@
 Data-Analysis
-This is a data analysis project done with an SQL Server and visualized with PowerBI.
+This repository contains data analysis projects done by me using Excel, SQL, and PowerBI. 
