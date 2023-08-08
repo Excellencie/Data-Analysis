@@ -1,6 +1,6 @@
 -- Standardize the date
-Select SaleDate, CONVERT(date,SaleDate) as NSaleDate
-from dbo.NashvilleData
+SELECT SaleDate, CONVERT(date,SaleDate) as NSaleDate
+FROM dbo.NashvilleData
 
 update NashvilleData
 set SaleDate = CONVERT(date,SaleDate) 
@@ -121,9 +121,9 @@ WHERE row_num > 1
 --Delete columns that are not in use
 ALTER TABLE NashvilleData
 DROP COLUMN PropertyAddress
-			,OwnerAddress
-			,SalesDateCon -- deleting it because because it's a duplicate
-			,TaxDistrict
+		,OwnerAddress
+		,SalesDateCon -- deleting it because because it's a duplicate
+		,TaxDistrict
 			
 
 SELECT *
