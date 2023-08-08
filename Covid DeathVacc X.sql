@@ -1,145 +1,157 @@
--- Standardize the date
-SELECT
-  SaleDate,
-  CONVERT(date, SaleDate) AS NSaleDate
-FROM dbo.NashvilleData
+SELECT * 
+FROM portfoliodb..coviddeaths
+WHERE continent IS NOT NULL
+ORDER BY 3,4
 
-UPDATE NashvilleData
-SET SaleDate = CONVERT(date, SaleDate)
+SELECT * 
+FROM portfoliodb..CovidVaccinations
+WHERE continent IS NOT NULL
+ORDER BY 3,4
 
+-- Select required columns
 
-ALTER TABLE Nashvilledata
-ADD SaleDateCon date;
+SELECT location, date, population, total_cases, total_deaths, new_cases
+FROM portfoliodb..CovidDeaths
+ORDER BY 1,2
 
-UPDATE NashvilleData
-SET SaleDateCon = CONVERT(date, SaleDate)
+-- Calculate percentage death rate; shows the likelihood of dying from covid if you contracted it in your country
 
--- Replace property address where null
+SELECT location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 as percentdeath
+FROM portfoliodb..CovidDeaths
+WHERE location = 'Nigeria'
+  AND continent IS NOT NULL
+ORDER BY 1,2
 
-SELECT
-  *
-FROM NashvilleData
-ORDER BY ParcelID
+-- Calculate population us total_cases; shows percentage of the population has gotten covid
 
-SELECT
-  a.ParcelID,
-  a.PropertyAddress,
-  b.ParcelID,
-  b.PropertyAddress,
-  ISNULL(a.PropertyAddress, b.PropertyAddress)
-FROM NashvilleData AS a
-JOIN NashvilleData AS b
-  ON a.ParcelID = b.ParcelID
-  AND a.[UniqueID ] <> b.[UniqueID ]
-WHERE a.PropertyAddress IS NULL
+SELECT location, date, population, total_cases,  (total_cases/population)*100 as percentpop
+FROM portfoliodb..CovidDeaths
+WHERE location = 'Nigeria'
+	AND  continent IS NOT NULL
+ORDER BY 1,2
 
-UPDATE a
-SET a.PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
-FROM NashvilleData AS a
-JOIN NashvilleData AS b
-  ON a.ParcelID = b.ParcelID
-  AND a.[UniqueID ] <> b.[UniqueID ]
-WHERE a.PropertyAddress IS NULL
+-- See Countries with the highest infection rates
 
--- Breaking the property address column into address, city
+SELECT location, population, MAX(total_cases) AS HighestInfectionCount,  MAX(total_cases/population)*100 as PercentPopInfected
+FROM portfoliodb..CovidDeaths
+--WHERE location = 'Nigeria'
+WHERE continent IS NOT NULL
+GROUP BY location, population
+ORDER BY 4 DESC
 
-SELECT
-  SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) - 1) AS PropAddress,
-  SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1, LEN(PropertyAddress)) AS PropCity
-FROM NashvilleData
+-- See countries with the highest death counts
 
-ALTER TABLE nashvilledata
-ADD PropAddress nvarchar(255);
+SELECT location, MAX(CAST(total_deaths AS INT)) as TotaltDeathCount 
+FROM portfoliodb..CovidDeaths
+--WHERE location = 'Nigeria'
+WHERE continent IS NOT NULL
+GROUP BY location
+ORDER BY 2 DESC
 
-UPDATE NashvilleData
-SET PropAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) - 1)
+-- Break things down by continent
 
-ALTER TABLE nashvilledata
-ADD PropCity nvarchar(255);
+SELECT location, MAX(CAST(total_deaths AS INT)) TotalDeathsCount
+FROM portfoliodb..CovidDeaths
+--WHERE location = 'Nigeria'
+WHERE continent IS  NULL
+GROUP BY location
+ORDER BY 2 DESC 
 
-UPDATE NashvilleData
-SET PropCity = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1, LEN(PropertyAddress))
+-- Global Numbers
+SELECT date, SUM(new_cases) AS TotalCasesCount, SUM(CAST (new_deaths AS int)) as TotalDeathCount, SUM(CAST(new_deaths AS int))/SUM(new_cases)*100  AS  GlobalDeathPercnet
+FROM portfoliodb..CovidDeaths
+--WHERE location = 'Nigeria'
+WHERE continent IS NOT NULL
+GROUP BY date
+ORDER BY 1,2,3 ASC
 
--- -- Breaking the property address column into address, city, state
+-- Looking at total population vs total vaccinations
+SELECT deaths.continent, 
+deaths.location, 
+deaths.population, 
+deaths.date, 
+vacc.new_vaccinations, 
+SUM(CAST(vacc.new_vaccinations AS int)) OVER( PARTITION BY deaths.location ORDER BY deaths.location, deaths.date) as RollingCount
+--,vacc.total_vaccinations
+FROM PortfolioDB..coviddeaths as deaths
+JOIN PortfolioDB..CovidVaccinations as vacc
+	ON deaths.location = vacc.location
+	AND deaths.date = vacc.date
+	WHERE deaths.continent IS NOT NULL
+	ORDER BY 2, 3
 
-SELECT
-  PARSENAME(REPLACE(OwnerAddress, ',', '.'), 3),
-  PARSENAME(REPLACE(OwnerAddress, ',', '.'), 2),
-  PARSENAME(REPLACE(OwnerAddress, ',', '.'), 1)
-FROM NashvilleData
+-- For better visualizations use CTE/Temp Table/View
 
-ALTER TABLE nashvilledata
-ADD OwnerAddressSplit nvarchar(255);
+-- Use CTE 
+WITH PopvsVac  
+AS (
+SELECT deaths.continent, 
+deaths.location, 
+deaths.population, 
+deaths.date, 
+vacc.new_vaccinations, 
+SUM(CAST(vacc.new_vaccinations AS int)) OVER( PARTITION BY deaths.location ORDER BY deaths.location, deaths.date) as RollingCountVac
+--,vacc.total_vaccinations
+FROM PortfolioDB..coviddeaths as deaths
+JOIN PortfolioDB..CovidVaccinations as vacc
+	ON deaths.location = vacc.location
+	AND deaths.date = vacc.date
+	WHERE deaths.continent IS NOT NULL
+	--ORDER BY 2, 3
+	)
 
-UPDATE NashvilleData
-SET OwnerAddressSplit = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 3)
+SELECT *, ROUND((RollingCountVac/population)*100,3) AS PercentageVaccinated
+FROM PopvsVac
+ORDER BY 1,2
 
-ALTER TABLE nashvilledata
-ADD OwnerCity nvarchar(255);
+-- Use Views
 
-UPDATE NashvilleData
-SET OwnerCity = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 2)
+CREATE VIEW PopVacc AS
+SELECT deaths.continent, 
+deaths.location, 
+deaths.population, 
+deaths.date, 
+vacc.new_vaccinations, 
+SUM(CAST(vacc.new_vaccinations AS int)) OVER( PARTITION BY deaths.location ORDER BY deaths.location, deaths.date) as RollingCountVac
+--,vacc.total_vaccinations
+FROM PortfolioDB..coviddeaths as deaths
+JOIN PortfolioDB..CovidVaccinations as vacc
+	ON deaths.location = vacc.location
+	AND deaths.date = vacc.date
+WHERE deaths.continent IS NOT NULL
+-- ORDER BY 2, 3
 
-ALTER TABLE nashvilledata
-ADD OwnerState nvarchar(255);
+-- check view
+SELECT *, ROUND((RollingCountVac/population)*100,3) AS PercentagePopVaccinated
+FROM PopVacc
 
-UPDATE NashvilleData
-SET OwnerState = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 1)
+-- Use a temp table
 
--- Update SoldAsVacant to have Yes and No as only values instead of Y & N
+DROP TABLE IF EXISTS #PercentagePopVacc
+CREATE TABLE #PercentagePopVacc
+(
+continent nvarchar(255),
+location nvarchar(255),
+population numeric,
+date datetime, 
+new_vaccinations numeric,
+RollingCountVac numeric
+)
 
-SELECT DISTINCT
-  (SoldAsVacant),
-  COUNT(SoldAsVacant)
-FROM nashvilledata
-GROUP BY soldasvacant
-ORDER BY 2
+INSERT INTO #PercentagePopVacc
+SELECT deaths.continent, 
+deaths.location, 
+deaths.population, 
+deaths.date, 
+vacc.new_vaccinations, 
+SUM(CAST(vacc.new_vaccinations AS int)) 
+	OVER( PARTITION BY deaths.location ORDER BY deaths.location, deaths.date) as RollingCountVac
+--,vacc.total_vaccinations
+FROM PortfolioDB..coviddeaths as deaths
+JOIN PortfolioDB..CovidVaccinations as vacc
+	ON deaths.location = vacc.location
+	AND deaths.date = vacc.date
+WHERE deaths.continent IS NOT NULL
 
-SELECT
-  SoldAsVacant,
-  CASE
-    WHEN SoldAsVacant = 'Y' THEN 'Yes'
-    WHEN SoldAsVacant = 'N' THEN 'No'
-    ELSE SoldAsVacant
-  END
-FROM NashvilleData
-
-UPDATE NashvilleData
-SET SoldAsVacant =
-                  CASE
-                    WHEN SoldAsVacant = 'Y' THEN 'Yes'
-                    WHEN SoldAsVacant = 'N' THEN 'No'
-                    ELSE SoldAsVacant
-                  END;
-
-
--- Remove duplicates
-
-WITH RowNumCTE
-AS (SELECT
-  *,
-  ROW_NUMBER() OVER (
-  PARTITION BY ParcelID,
-  PropertyAddress,
-  SalePrice,
-  SaleDate,
-  LegalReference
-  ORDER BY
-  UniqueID
-  ) row_num
-FROM NashvilleData)
-DELETE FROM RowNumCTE
-WHERE row_num > 1
-
-
---Delete columns that are not in use
-ALTER TABLE NashvilleData
-DROP COLUMN PropertyAddress
-, OwnerAddress
-, SalesDateCon -- deleting it because because it's a duplicate
-, TaxDistrict
-
-
-SELECT
-  *
-FROM NashvilleData
+SELECT *, CAST(ROUND((RollingCountVac/population)*100,3) AS DECIMAL(10,2)) AS PercentagePopVaccinated
+FROM #PercentagePopVacc
